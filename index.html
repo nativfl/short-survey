@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>סקר קצר על שמות של עסקים</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--ink:#1d1d1b;--mute:#6b6b66;--line:#dcdcd6;--acc:#2f2f2c}
+@media (prefers-color-scheme:dark){:root{--bg:#171716;--card:#222220;--ink:#efefea;--mute:#a4a49c;--line:#3a3a36;--acc:#efefea}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.55 system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+main{max-width:560px;margin:0 auto;padding:24px 16px 48px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 18px}
+h1{font-size:22px;margin:0 0 12px}
+p{margin:0 0 12px}
+.mute{color:var(--mute);font-size:15px}
+.name{font-size:40px;font-weight:700;text-align:center;margin:18px 0 22px;line-height:1.25}
+label.q{display:block;font-weight:600;margin-bottom:8px}
+textarea{width:100%;min-height:110px;font:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);resize:vertical}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer}
+.opt input{margin-top:5px;transform:scale(1.2)}
+button{font:inherit;font-weight:600;width:100%;padding:14px;border:0;border-radius:10px;background:var(--acc);color:var(--bg);cursor:pointer;margin-top:12px}
+button:disabled{opacity:.35;cursor:default}
+.locked{padding:12px;border-radius:10px;background:var(--bg);border:1px dashed var(--line);margin-bottom:16px;white-space:pre-wrap}
+.bar{height:4px;background:var(--line);border-radius:2px;margin-bottom:16px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc);width:0}
+.err{color:#b3261e;font-size:15px;margin-top:8px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <div class="bar"><i id="barfill"></i></div>
+  <div class="card" id="view"></div>
+</main>
+<script>
+(function(){
+'use strict';
+var CONFIG = {
+  url: 'https://flrnzzjqmovufyqelbxj.supabase.co',
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscm56empxbW92dWZ5cWVsYnhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMDg1ODcsImV4cCI6MjA4Njg4NDU4N30.rffIx1E61wduuC4arYpn4mdS_GwXnb0eX3YrsSmSI0g',
+  table_answers: 'naming_survey_answers',
+  table_resp: 'naming_survey_respondents',
+  version: 'v1-2026-10-19',
+  // Names. Order is the plan's table (section 1). Number 10 is the current brand, used as benchmark.
+  names: ['ארה״ב אישית','ארה״ב בתפירה אישית','טיול אמריקאי אישי','ארה״ב בידיים טובות','ארה״ב מהשטח','ארה״ב מבפנים','קוסט טו קוסט','הלוך ושוב','חותמות','ארצות הברית למטיילים'],
+  // To stop a name from being first once it reached its quota, list its number (1 to 10) here.
+  closedFirst: [],
+  openQuestion: 'קראת עכשיו שם של עסק. לפי השם בלבד, מה לדעתך העסק הזה עושה?',
+  closedQuestion: 'אם זה עסק של טיולים, איזה סוג?'
+};
+var CLOSED = [
+  ['group','טיולים מאורגנים בקבוצה עם מדריך'],
+  ['independent','טיול עצמאי שמתכננים ומזמינים בשבילך'],
+  ['flights_hotels','רק טיסות או מלונות'],
+  ['not_travel','לא נשמע לי עסק של טיולים']
+]; // "לא יודע/ת" is always last
+var DONT_KNOW = ['dont_know','לא יודע/ת'];
+
+var qs = new URLSearchParams(location.search);
+var srcRaw = (qs.get('src')||'').toLowerCase().replace(/[^a-z0-9_֐-׿]/g,'').slice(0,30) || null;
+var isLocal = (location.hostname==='localhost'||location.hostname==='127.0.0.1');
+var stub = isLocal ? qs.get('stub') : null; // local tests only: send to a fake endpoint
+var KEY = 'ns_state_v1';
+var view = document.getElementById('view'), bar = document.getElementById('barfill');
+
+function uuid(){
+  if(window.crypto&&crypto.randomUUID) return crypto.randomUUID();
+  var a=new Uint8Array(16); crypto.getRandomValues(a); a[6]=a[6]&15|64; a[8]=a[8]&63|128;
+  var h=[].map.call(a,function(b){return ('0'+b.toString(16)).slice(-2)}).join('');
+  return h.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5');
+}
+function rnd(n){ var a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]%n; }
+function shuffle(arr){ arr=arr.slice(); for(var i=arr.length-1;i>0;i--){var j=rnd(i+1);var t=arr[i];arr[i]=arr[j];arr[j]=t;} return arr; }
+function now(){ return new Date().toISOString(); }
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]}); }
+
+var S = load();
+function load(){ try{ var s=JSON.parse(localStorage.getItem(KEY)); if(s&&s.rid) return s; }catch(e){} return null; }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+
+function newState(){
+  // First name: uniform random among names still open. Names 2 and 3: random, distinct.
+  var open=[]; for(var i=1;i<=10;i++){ if(CONFIG.closedFirst.indexOf(i)<0) open.push(i); }
+  if(!open.length) open=[1,2,3,4,5,6,7,8,9,10];
+  var first=open[rnd(open.length)];
+  var rest=[]; for(var k=1;k<=10;k++){ if(k!==first) rest.push(k); }
+  rest=shuffle(rest);
+  return { rid:uuid(), src:srcRaw, order:[first,rest[0],rest[1]], pos:0, stage:'intro',
+           started:null, shown:null, openText:null, openAt:null, closedOrder:null, pending:[], done:false };
+}
+if(!S){ S=newState(); save(); }
+if(S.src==null && srcRaw) { S.src=srcRaw; save(); }
+
+// No going back: block the back button and warn on leaving mid-way.
+try{ history.pushState(null,'',location.href); window.addEventListener('popstate',function(){ history.pushState(null,'',location.href); }); }catch(e){}
+window.addEventListener('beforeunload',function(e){ if(!S.done&&S.stage!=='intro'){ e.preventDefault(); e.returnValue=''; } });
+
+function post(table,row){
+  var base = stub || (CONFIG.url+'/rest/v1');
+  var headers={'Content-Type':'application/json','Prefer':'return=minimal'};
+  if(!stub){ headers.apikey=CONFIG.key; headers.Authorization='Bearer '+CONFIG.key; }
+  return fetch(base+'/'+table,{method:'POST',headers:headers,body:JSON.stringify(row),keepalive:true})
+    .then(function(r){ if(!r.ok && r.status!==409) throw new Error('http '+r.status); }); // 409 = row already saved (retry after a lost reply), treat as sent
+}
+function send(table,row){
+  return post(table,row).catch(function(){ return post(table,row); }).then(function(){return true;},function(){
+    S.pending.push({t:table,r:row}); save(); return false; });
+}
+function flush(){
+  var p=S.pending; S.pending=[]; save();
+  return p.reduce(function(chain,it){ return chain.then(function(){ return send(it.t,it.r); }); }, Promise.resolve());
+}
+
+function progress(){
+  var steps = S.stage==='intro'?0 : S.stage==='thanks'?1 : (S.stage==='recall'?0.85 : (S.pos+(S.stage==='closed'?0.7:S.stage==='open'?0.35:0))/3*0.85);
+  bar.style.width=Math.round(steps*100)+'%';
+}
+
+function render(){
+  progress();
+  if(S.done||S.stage==='thanks') return thanks();
+  if(S.stage==='intro') return intro();
+  if(S.stage==='open') return openQ();
+  if(S.stage==='closed') return closedQ();
+  if(S.stage==='recall') return recallQ();
+}
+function intro(){
+  view.innerHTML='<h1>סקר קצר על שמות של עסקים</h1>'+
+   '<p>זה לוקח כ-2 דקות. הסקר אנונימי, לא שואלים שם, טלפון או מייל.</p>'+
+   '<p>תראו 3 שמות, אחד בכל מסך, ותענו על שתי שאלות קצרות על כל שם. אין תשובה נכונה ואין תשובה לא נכונה. מה שחשוב הוא מה שעולה לכם בראש.</p>'+
+   '<p class="mute">אי אפשר לחזור אחורה אחרי שעונים.</p>'+
+   '<button id="go">מתחילים</button>';
+  document.getElementById('go').onclick=function(){ S.stage='open'; S.started=now(); S.shown=now(); save(); render(); };
+}
+function nameBlock(){ return '<div class="name">'+esc(CONFIG.names[S.order[S.pos]-1])+'</div>'; }
+function openQ(){
+  if(!S.shown){ S.shown=now(); save(); }
+  view.innerHTML='<p class="mute">שם '+(S.pos+1)+' מתוך 3</p>'+nameBlock()+
+    '<label class="q" for="t">'+esc(CONFIG.openQuestion)+'</label>'+
+    '<textarea id="t" maxlength="500" placeholder="כתבו כאן במילים שלכם"></textarea>'+
+    '<button id="next" disabled>המשך</button><div class="mute" style="margin-top:8px">אחרי ההמשך אי אפשר לשנות את התשובה.</div>';
+  var t=document.getElementById('t'), b=document.getElementById('next');
+  t.oninput=function(){ b.disabled = t.value.trim().length<1; };
+  b.onclick=function(){
+    S.openText=t.value.trim(); S.openAt=now();
+    S.closedOrder=shuffle(CLOSED.map(function(c){return c[0];})).concat([DONT_KNOW[0]]);
+    S.stage='closed'; save(); render();
+  };
+}
+function closedQ(){
+  var labels={}; CLOSED.concat([DONT_KNOW]).forEach(function(c){labels[c[0]]=c[1];});
+  var h='<p class="mute">שם '+(S.pos+1)+' מתוך 3</p>'+nameBlock()+
+   '<div class="locked">'+esc(S.openText)+'</div>'+
+   '<p><b>'+esc(CONFIG.closedQuestion)+'</b></p>';
+  S.closedOrder.forEach(function(k){ h+='<label class="opt"><input type="radio" name="c" value="'+k+'"><span>'+esc(labels[k])+'</span></label>'; });
+  h+='<button id="next" disabled>המשך</button>';
+  view.innerHTML=h;
+  var b=document.getElementById('next');
+  [].forEach.call(view.querySelectorAll('input[name=c]'),function(i){ i.onchange=function(){ b.disabled=false; }; });
+  b.onclick=function(){
+    var v=view.querySelector('input[name=c]:checked').value; b.disabled=true;
+    var row={ respondent_id:S.rid, src:S.src, position:S.pos+1, name_id:S.order[S.pos], open_text:S.openText,
+              closed_type:v, closed_order:S.closedOrder, shown_at:S.shown, open_at:S.openAt, closed_at:now() };
+    send(CONFIG.table_answers,row).then(function(){
+      S.pos++; S.shown=null; S.openText=null; S.openAt=null; S.closedOrder=null;
+      S.stage = S.pos>=3 ? 'recall' : 'open'; save(); render();
+    });
+  };
+}
+function recallQ(){
+  view.innerHTML='<h1>שתי שאלות אחרונות</h1>'+
+   '<label class="q" for="r">אילו שמות ראית בהתחלה? כתבו מה שזכרתם.</label>'+
+   '<textarea id="r" maxlength="500" placeholder="אפשר לכתוב גם שם אחד, או לכתוב שלא זכרתם"></textarea>'+
+   '<p style="margin-top:18px"><b>שמעת פעם על: ארצות הברית למטיילים · קבוצת הפייסבוק ארצות הברית מטיילים עוזרים למטיילים?</b></p>'+
+   '<label class="opt"><input type="radio" name="h" value="yes"><span>כן</span></label>'+
+   '<label class="opt"><input type="radio" name="h" value="no"><span>לא</span></label>'+
+   '<button id="fin" disabled>סיום</button><div class="err" id="e" hidden></div>';
+  var b=document.getElementById('fin'), r=document.getElementById('r');
+  function chk(){ b.disabled = !(view.querySelector('input[name=h]:checked') && r.value.trim().length>0); }
+  r.oninput=chk; [].forEach.call(view.querySelectorAll('input[name=h]'),function(i){i.onchange=chk;});
+  b.onclick=function(){
+    b.disabled=true;
+    var row={ respondent_id:S.rid, src:S.src, name_order:S.order, first_name_id:S.order[0], recall_text:r.value.trim(),
+              heard_brand:view.querySelector('input[name=h]:checked').value, started_at:S.started, finished_at:now(),
+              device:(window.innerWidth<768?'mobile':'desktop'), viewport_w:window.innerWidth, page_version:CONFIG.version };
+    send(CONFIG.table_resp,row).then(function(){ return flush(); }).then(function(){
+      S.done=true; S.stage='thanks'; save(); render();
+    });
+  };
+}
+function thanks(){
+  bar.style.width='100%';
+  view.innerHTML='<h1>תודה רבה!</h1><p>זה הכול. התשובות שלכם עוזרות לנו מאוד.</p><p class="mute">אפשר לסגור את העמוד.</p>';
+}
+// A person who already finished sees thanks (no second round, no re-answering).
+render();
+if(S.pending&&S.pending.length) flush();
+})();
+</script>
+</body>
+</html>
