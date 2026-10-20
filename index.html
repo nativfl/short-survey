@@ -42,10 +42,10 @@ var CONFIG = {
   key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZscm56empxbW92dWZ5cWVsYnhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMDg1ODcsImV4cCI6MjA4Njg4NDU4N30.rffIx1E61wduuC4arYpn4mdS_GwXnb0eX3YrsSmSI0g',
   table_answers: 'naming_survey_answers',
   table_resp: 'naming_survey_respondents',
-  version: 'v1-2026-10-19',
-  // Names. Order is the plan's table (section 1). Number 10 is the current brand, used as benchmark.
-  names: ['ארה״ב אישית','ארה״ב בתפירה אישית','טיול אמריקאי אישי','ארה״ב בידיים טובות','ארה״ב מהשטח','ארה״ב מבפנים','קוסט טו קוסט','הלוך ושוב','חותמות','ארצות הברית למטיילים'],
-  // To stop a name from being first once it reached its quota, list its number (1 to 10) here.
+  version: 'v2-2026-10-20',
+  // Names (v2, NV-BRAND-073). Number 8 is the current brand, used as benchmark. v1 names (1-10) were never distributed.
+  names: ['עושים אמריקה','אמריקן טרוול','קולומבוס','הנבחרת מאמריקה','ליברטי אמריקה','אפולו','אמריקן דרים','ארצות הברית למטיילים'],
+  // To stop a name from being first once it reached its quota, list its number (1 to 8) here.
   closedFirst: [],
   openQuestion: 'קראת עכשיו שם של עסק. לפי השם בלבד, מה לדעתך העסק הזה עושה?',
   closedQuestion: 'אם זה עסק של טיולים, איזה סוג?'
@@ -62,7 +62,7 @@ var qs = new URLSearchParams(location.search);
 var srcRaw = (qs.get('src')||'').toLowerCase().replace(/[^a-z0-9_֐-׿]/g,'').slice(0,30) || null;
 var isLocal = (location.hostname==='localhost'||location.hostname==='127.0.0.1');
 var stub = isLocal ? qs.get('stub') : null; // local tests only: send to a fake endpoint
-var KEY = 'ns_state_v1';
+var KEY = 'ns_state_v2';
 var view = document.getElementById('view'), bar = document.getElementById('barfill');
 
 function uuid(){
@@ -82,10 +82,10 @@ function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} 
 
 function newState(){
   // First name: uniform random among names still open. Names 2 and 3: random, distinct.
-  var open=[]; for(var i=1;i<=10;i++){ if(CONFIG.closedFirst.indexOf(i)<0) open.push(i); }
-  if(!open.length) open=[1,2,3,4,5,6,7,8,9,10];
+  var open=[]; for(var i=1;i<=CONFIG.names.length;i++){ if(CONFIG.closedFirst.indexOf(i)<0) open.push(i); }
+  if(!open.length) open=CONFIG.names.map(function(_,j){return j+1;});
   var first=open[rnd(open.length)];
-  var rest=[]; for(var k=1;k<=10;k++){ if(k!==first) rest.push(k); }
+  var rest=[]; for(var k=1;k<=CONFIG.names.length;k++){ if(k!==first) rest.push(k); }
   rest=shuffle(rest);
   return { rid:uuid(), src:srcRaw, order:[first,rest[0],rest[1]], pos:0, stage:'intro',
            started:null, shown:null, openText:null, openAt:null, closedOrder:null, pending:[], done:false };
